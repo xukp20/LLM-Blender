@@ -191,6 +191,8 @@ class Blender:
         return_scores:bool=False,
         batch_size:int=8,
         disable_tqdm:bool=False,
+        # xkp: 2024/08/24 add param for returning raw table also
+        return_raw_table:bool=False,
         **rank_kwargs
     ):
         """Rank candidates for each input
@@ -212,6 +214,10 @@ class Blender:
         assert len(inputs) == len(candidates), "Number of inputs and candidates must be the same"
         assert all([len(c) > 0 for c in candidates]), "Each input must have at least one candidate"
         assert all([len(c) == len(candidates[0]) for c in candidates]), "Number of candidates for each input must be the same"
+        if return_raw_table:
+            assert self.ranker_config.ranker_type == "pairranker", "return_raw_table is only supported for pairranker"
+            assert return_scores, "return_raw_table is only supported when return_scores is True"
+
         collate_fn = copy.copy(self.ranker_collator)
         collate_fn.source_maxlength = rank_kwargs.get("source_max_length", None) or self.ranker_config.source_maxlength
         collate_fn.candidate_maxlength = rank_kwargs.get("candidate_max_length", None) or self.ranker_config.candidate_maxlength
@@ -224,6 +230,7 @@ class Blender:
                 if self.ranker_config.ranker_type == "pairranker":
                     outputs = self.ranker._full_predict(**batch)
                     preds = outputs['logits'].detach().cpu().numpy()
+                    raw_table = preds.clone()
                     batch_scores = get_scores_from_cmps(preds)
                 elif self.ranker_config.ranker_type in ["summareranker", "simcls"]:
                     outputs = self.ranker(**batch)
@@ -239,6 +246,8 @@ class Blender:
                 scores.append(batch_scores)
         scores = np.concatenate(scores, axis=0)
         if return_scores:
+            if return_raw_table:
+                return scores, raw_table
             return scores
         else:
             return get_ranks_from_scores(scores)
