@@ -224,13 +224,15 @@ class Blender:
         dataset = RankerDataset(inputs, candidates, instructions=instructions)
         dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=False, collate_fn=collate_fn)
         scores = []
+        if return_raw_table:
+            raw_table = []
         with torch.no_grad():
             for batch in tqdm(iter(dataloader), desc="Ranking candidates", disable=(not self.blender_config.use_tqdm or disable_tqdm)):
                 batch = {k: v.to(self.ranker_config.device) for k, v in batch.items() if v is not None}
                 if self.ranker_config.ranker_type == "pairranker":
                     outputs = self.ranker._full_predict(**batch)
                     preds = outputs['logits'].detach().cpu().numpy()
-                    raw_table = preds.clone()
+                    raw_table.append(preds)
                     batch_scores = get_scores_from_cmps(preds)
                 elif self.ranker_config.ranker_type in ["summareranker", "simcls"]:
                     outputs = self.ranker(**batch)
@@ -245,6 +247,9 @@ class Blender:
                     batch_scores = batch_scores.reshape(-1, len(candidates[0]))
                 scores.append(batch_scores)
         scores = np.concatenate(scores, axis=0)
+        if return_raw_table:
+            raw_table = np.concatenate(raw_table, axis=0)
+            
         if return_scores:
             if return_raw_table:
                 return scores, raw_table
